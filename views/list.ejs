@@ -1,25 +1,61 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Document</title>
     <link href="/main.css" rel="stylesheet">
 </head>
+
 <body class="grey-bg">
-    
+
     <%- include('nav.ejs') %>
 
-    <div class="white-bg">
-        <% for (let i=0; i<posts.length; i++) { %>
-            <div class="list-box">
-                <h4>
-                    <a href="/detail/<%=posts[i]._id%>"><%=posts[i].title%></a>
-                    <a href="/modify/<%=posts[i]._id%>">✏️</a>
-                </h4>
-                <p><%=posts[i].content%></p>
-            </div>
-        <% } %>
-    </div> 
-  </body>
+        <div class="white-bg">
+            <% for (let i=0; i<posts.length; i++) { %>
+                <div class="list-box">
+                    <h4>
+                        <a href="/detail/<%=posts[i]._id%>">
+                            <%=posts[i].title%>
+                        </a>
+                        <a href="/modify/<%=posts[i]._id%>">✏️</a>
+                        <span class="delete">🗑️</span>
+                    </h4>
+                    <p>
+                        <%=posts[i].content%>
+                    </p>
+                </div>
+                <% } %>
+        </div>
+
+        <a href="/list/next/<%= posts[posts.length-1]._id %>">다음</a>
+        
+        <script>
+            document.addEventListener("DOMContentLoaded", function () {
+                document.querySelectorAll('.delete').forEach(button => {
+                    button.addEventListener('click', function (e) {
+                        let listBox = this.closest('div');
+                        let id = listBox.querySelector('h4 a').getAttribute('href').split('/').pop();
+
+                        fetch('/doc', {
+                            method: 'DELETE',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ id: id })
+                        })
+                            .then((r) =>
+                                r.text()
+                            )
+                            .then((result) => {
+                                e.target.parentElement.parentElement.style.display = 'none'
+                            })
+                    });
+                });
+            });
+        </script>
+
+</body>
+
 </html>
