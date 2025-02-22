@@ -8,13 +8,35 @@ const passport = require('passport')
 const LocalStrategy = require('passport-local')
 const bcrypt = require('bcrypt')
 const MongoStore = require('connect-mongo')
+require('dotenv').config()
+const { S3Client } = require('@aws-sdk/client-s3')
+const multer = require('multer')
+const multerS3 = require('multer-s3')
+const connectDB = require('./database.js')
+
+const s3 = new S3Client({
+    region: 'ap-northeast-2',
+    credentials: {
+        accessKeyId: process.env.S3_ACCESS_KEY,
+        secretAccessKey: process.env.S3_SECRET_KEY
+    }
+})
+
+const upload = multer({
+    storage: multerS3({
+        s3: s3,
+        bucket: process.env.S3_BUCKET_NAME,
+        key: function (요청, file, cb) {
+            cb(null, Date.now().toString()) //업로드시 파일명 변경가능
+        }
+    })
+})
 
 let db
-const url = 'mongodb+srv://root:wkrwjs4602!@cluster0.k2yfl.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0'
-new MongoClient(url).connect().then((client) => {
+connectDB.then((client) => {
     console.log('DB연결성공')
     db = client.db('forum')
-    app.listen(8080, () => {
+    app.listen(process.env.PORT, () => {
         console.log('http://localhost:8080에서 서버 실행중')
     })
 }).catch((err) => {
@@ -31,16 +53,19 @@ app.use(session({
     secret: 'oefjdasdf',
     resave: false,
     saveUninitialized: false,
-    cookie : {maxAge: 60 * 60 * 1000},
-    store : MongoStore.create({
-        mongoUrl : 'mongodb+srv://root:wkrwjs4602!@cluster0.k2yfl.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0',
-        dbName : 'forum'
+    cookie: { maxAge: 60 * 60 * 1000 },
+    store: MongoStore.create({
+        mongoUrl: process.env.DB_URL,
+        dbName: 'forum'
     })
 }))
 
 app.use(passport.session())
 
-app.get('/', (요청, 응답) => {
+// app.use(checkUser) <- 밑에 있는 api는 이 미들웨어 다 등록해준다.
+// app.use('/url', checkUser) <- 해당되는 url에 미들웨어 다 등록해준다.
+// app.get('/', [checkUser1, checkUser2], (요청, 응답) => {
+app.get('/', checkUser, (요청, 응답) => {
     응답.sendFile(__dirname + "/index.html")
 })
 
@@ -53,6 +78,7 @@ app.get('/shop', (요청, 응답) => {
     응답.send('쇼핑페이지임')
 })
 
+app.use('/list', currentTime)
 app.get('/list', async (요청, 응답) => {
     let result = await db.collection('post').find().toArray()
     console.log(result)
@@ -70,18 +96,22 @@ app.get('/write', (요청, 응답) => {
 app.post('/add', async (req, res) => {
     console.log(req.body)
 
-    try {
-        if (req.body.title == '' || req.body.content == '') {
-            res.send('제목이 비었습니다.')
-        } else {
-            await db.collection('post').insertOne({ title: req.body.title, content: req.body.content })
+    upload.single('img1') (req, res, (err) => {
+        if (err) return res.send('업로드 에러')
 
-            res.redirect('/list')
+        try {
+            if (req.body.title == '') {
+                res.send('제목이 비었습니다.')
+            } else {
+                db.collection('post').insertOne({ title: req.body.title, content: req.body.content, img: req.file.location })
+
+                res.redirect('/list')
+            }
+        } catch (e) {
+            console.log(e)
+            res.status(500).send('서버에 오류가 발생했습니다.')
         }
-    } catch (e) {
-        console.log(e)
-        res.status(500).send('서버에 오류가 발생했습니다.')
-    }
+    })
 })
 
 app.get('/detail/:id', async (req, res) => {
@@ -177,22 +207,22 @@ passport.serializeUser((user, done) => {
     })
 })
 
-passport.deserializeUser( async (user, done) => {
-    let result = await db.collection('user').findOne({_id: new ObjectId(user.id)})
+passport.deserializeUser(async (user, done) => {
+    let result = await db.collection('user').findOne({ _id: new ObjectId(user.id) })
 
     delete result.password
 
     process.nextTick(() => {
-      return done(null, result)
+        return done(null, result)
     })
-  })
+})
 
 app.get('/login', async (req, res) => {
     console.log(req.user)
     res.render('login.ejs')
 })
 
-app.post('/login', async (req, res, next) => {
+app.post('/login', checkBlank, async (req, res, next) => {
     passport.authenticate('local', (error, user, info) => {
         if (error) return res.status(500).json(error)
         if (!user) return res.status(401).json(info.message)
@@ -207,15 +237,39 @@ app.get('/myPage', (req, res) => {
         res.sendStatus(400).send('로그인 하지 않았습니다.')
     }
 
-    res.render('myPage.ejs', {id: req.user._id})
+    res.render('myPage.ejs', { id: req.user._id })
 })
 
 app.get('/register', (req, res) => {
     res.render('register.ejs')
 })
 
-app.post('/register', async (req, res) => {
+app.post('/register', checkBlank, async (req, res) => {
     let hashPassword = await bcrypt.hash(req.body.password, 10)
-    let result = await db.collection('user').insertOne({username: req.body.username, password: hashPassword})
+    let result = await db.collection('user').insertOne({ username: req.body.username, password: hashPassword })
     res.redirect('/')
 })
+
+app.use('/shop', require('./routes/shop.js'))
+app.use('/board/sub', require('./routes/board.js'))
+
+function checkUser(req, res, next) {
+    if (!req.user) {
+        res.send('로그인하세요')
+    }
+    // 다음으로 이동하라는 뜻 없다면 무한대기 상태에 빠진다.
+    next()
+}
+
+function currentTime(req, res, next) {
+    console.log(new Date())
+    next()
+}
+
+function checkBlank(req, res, next) {
+    if (req.body.username == '' || req.body.password == '') {
+        res.send('아이디 또는 비번이 빈칸입니다.')
+    }
+
+    next()
+}
