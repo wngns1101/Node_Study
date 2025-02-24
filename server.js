@@ -83,10 +83,9 @@ app.get('/list', async (요청, 응답) => {
     let result = await db.collection('post').find().toArray()
     console.log(result)
     console.log(result[0].title)
-
     // 템플릿 파일 내릴 때는 render 써야함
     // ejs는 기본 경로가 /views/*
-    응답.render('list.ejs', { posts: result })
+    응답.render('list.ejs', { posts: result, user: 요청.user._id })
 })
 
 app.get('/write', (요청, 응답) => {
@@ -96,14 +95,20 @@ app.get('/write', (요청, 응답) => {
 app.post('/add', async (req, res) => {
     console.log(req.body)
 
-    upload.single('img1') (req, res, (err) => {
+    upload.single('img1')(req, res, (err) => {
         if (err) return res.send('업로드 에러')
 
         try {
             if (req.body.title == '') {
                 res.send('제목이 비었습니다.')
             } else {
-                db.collection('post').insertOne({ title: req.body.title, content: req.body.content, img: req.file.location })
+                db.collection('post').insertOne({
+                    title: req.body.title,
+                    content: req.body.content,
+                    img: req.file ? req.file.location : '',
+                    user: req.user._id,
+                    username: req.user.username
+                })
 
                 res.redirect('/list')
             }
@@ -117,12 +122,13 @@ app.post('/add', async (req, res) => {
 app.get('/detail/:id', async (req, res) => {
     try {
         let data = await db.collection('post').findOne({ _id: new ObjectId(req.params.id) })
+        let comments = await db.collection('comment').find({parent_id: new ObjectId(req.params.id)}).toArray()
 
         if (data == null) {
             res.status(404).send('유효하지 않는 url 입니다')
         }
 
-        res.render('detail.ejs', { data: data })
+        res.render('detail.ejs', { data: data, comments: comments})
     } catch (e) {
         res.status(404).send('유효하지 않는 url 입니다')
     }
@@ -146,18 +152,18 @@ app.get('/modify/:id', async (req, res) => {
 app.put('/modify', async (req, res) => {
     console.log(req.body)
 
-    await db.collection('post').updateOne({ _id: 1 }, { $inc: { like: -2 } })
+    // await db.collection('post').updateOne({ _id: 1, user: new ObjectId(req.user._id) }, { $inc: { like: -2 } })
 
-    // try{
-    //     if (req.body.id == '' || req.body.title == '' || req.body.connect == '') {
-    //         res.status(400).send('빈칸이 존재합니다.')
-    //     }
+    try{
+        if (req.body.id == '' || req.body.title == '' || req.body.connect == '') {
+            res.status(400).send('빈칸이 존재합니다.')
+        }
 
-    //     await db.collection('post').updateOne({_id: new ObjectId(req.body.id)}, {$set: {title: req.body.title, content: req.body.content}})
-    //     res.redirect('/list')
-    // } catch(e) {
-    //     res.status(500).send('서버 오류입니다.')
-    // }
+        await db.collection('post').updateOne({_id: new ObjectId(req.body.id), user: new ObjectId(req.user._id)}, {$set: {title: req.body.title, content: req.body.content}})
+        res.redirect('/list')
+    } catch(e) {
+        res.status(500).send('서버 오류입니다.')
+    }
 })
 
 
@@ -170,19 +176,22 @@ app.get('/time', (req, res) => {
 app.delete('/doc', async (req, res) => {
     console.log(req.body.id)
 
-    await db.collection('post').deleteOne({ _id: new ObjectId(req.body.id) })
+    await db.collection('post').deleteOne({
+        _id: new ObjectId(req.body.id),
+        user: new ObjectId(req.user._id)
+    })
     res.send('삭제 완료')
 })
 
 app.get('/list/:id', async (req, res) => {
     let result = await db.collection('post').find().skip((req.params.id - 1) * 5).limit(5).toArray()
-    res.render('list.ejs', { posts: result })
+    res.render('list.ejs', { posts: result, user: req.user._id })
 })
 
 app.get('/list/next/:id', async (req, res) => {
     console.log(req.params.id)
     let result = await db.collection('post').find({ _id: { $gt: new ObjectId(req.params.id) } }).limit(5).toArray()
-    res.render('list.ejs', { posts: result })
+    res.render('list.ejs', { posts: result, user: req.user._id })
 })
 
 passport.use(new LocalStrategy(async (입력한아이디, 입력한비번, cb) => {
@@ -249,6 +258,49 @@ app.post('/register', checkBlank, async (req, res) => {
     let result = await db.collection('user').insertOne({ username: req.body.username, password: hashPassword })
     res.redirect('/')
 })
+
+app.get('/search', async (req, res) => {
+    // let result = await db.collection('post').find({title : {$regex : req.query.val}}).toArray()
+    // 정규식 
+
+    // 성능평가
+    // let result = await db.collection('post').find({$text: {$search : req.query.val}}).explain('executionStats')
+
+    // 인덱스 조회 (단 띄어쓰기 기준으로 검색 가능해서 문자 인덱스에는 사용 안 함)
+    // let result = await db.collection('post').find({$text: {$search : req.query.val}}).toArray()
+
+    let searchCondition = [
+        {
+            $search: {
+                index: 'title_index',
+                text: { query: req.query.val, path: 'title' }
+            }
+        },
+        { $project: { title: 1 } }
+        // {$skip : 10}
+    ]
+    let result = await db.collection('post').aggregate(searchCondition).toArray()
+
+    res.render('search.ejs', { posts: result })
+})
+
+app.post('/comment', (req, res) => {
+    try{
+        if (req.comment = '') {
+            res.status(400).send('내용이 비었습니다.')
+        }
+
+        db.collection('comment').insertOne({
+            comment: req.body.content,
+            parent_id: new ObjectId(req.body.parentId)
+        })
+
+        res.redirect('/detail/' + req.body.parentId)
+    } catch (e) {
+        res.status(500).send('서버 오류입니다')
+    }
+})
+
 
 app.use('/shop', require('./routes/shop.js'))
 app.use('/board/sub', require('./routes/board.js'))

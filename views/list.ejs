@@ -12,6 +12,16 @@
 
     <%- include('nav.ejs') %>
 
+        <input class="search">
+        <button class="search-send">검색</button>
+
+        <script>
+            document.querySelector('.search-send').addEventListener('click', function () {
+                let inputSearch = document.querySelector('.search').value
+                location.href = '/search?val=' + inputSearch
+            })
+        </script>
+
         <div class="white-bg">
             <% for (let i=0; i<posts.length; i++) { %>
                 <div class="list-box">
@@ -19,8 +29,10 @@
                         <a href="/detail/<%=posts[i]._id%>">
                             <%=posts[i].title%>
                         </a>
-                        <a href="/modify/<%=posts[i]._id%>">✏️</a>
-                        <span class="delete">🗑️</span>
+                        <% if (posts[i].user && user && posts[i].user.toString()===user.toString()) { %>
+                            <a href="/modify/<%=posts[i]._id%>">✏️</a>
+                            <span class="delete">🗑️</span>
+                        <% } %>
                     </h4>
                     <p>
                         <%=posts[i].content%>
@@ -30,7 +42,7 @@
         </div>
 
         <a href="/list/next/<%= posts[posts.length-1]._id %>">다음</a>
-        
+
         <script>
             document.addEventListener("DOMContentLoaded", function () {
                 document.querySelectorAll('.delete').forEach(button => {
@@ -49,7 +61,9 @@
                                 r.text()
                             )
                             .then((result) => {
-                                e.target.parentElement.parentElement.style.display = 'none'
+                                if (result.text() == "삭제 완료") {
+                                    e.target.parentElement.parentElement.style.display = 'none'
+                                }
                             })
                     });
                 });

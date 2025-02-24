@@ -1,19 +1,40 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Document</title>
     <link href="/main.css" rel="stylesheet">
 </head>
+
 <body class="grey-bg">
     <%- include('nav.ejs') %>
+        <div class="detail-bg">
+            <h4>
+                <%= data.title %>
+            </h4>
+            <p>
+                <%= data.content %>
+            </p>
+            <img src="<%= data.img %>">
+            <hr style="margin-top: 60px">
+            <div>
+                <p><strong>작성자</strong> 댓글내용</p>
+            </div>
+            <form action="/comment" method="POST">
+                <input name="content">
+                <input name="parentId" value="<%= data._id %>" style="display: none">
+                <button type="submit">댓글작성</button>
+            </form>
+            <% for(let i=0; i<comments.length; i++) { %>
+                <p>
+                    <%= comments[i].comment %>
+                </p>
+            <% } %>
+        </div>
 
-    <div class="detail-bg">
-        <h4><%= data.title %></h4>
-        <p><%= data.content %></p>
-        <img src="<%= data.img %>">
-    </div> 
-    
+
 </body>
+
 </html>
