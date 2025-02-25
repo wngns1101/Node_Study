@@ -13,6 +13,10 @@ const { S3Client } = require('@aws-sdk/client-s3')
 const multer = require('multer')
 const multerS3 = require('multer-s3')
 const connectDB = require('./database.js')
+const { createServer } = require('http')
+const { Server } = require('socket.io')
+const server = createServer(app)
+const io = new Server(server) 
 
 const s3 = new S3Client({
     region: 'ap-northeast-2',
@@ -33,10 +37,18 @@ const upload = multer({
 })
 
 let db
+let changeStream
+
 connectDB.then((client) => {
     console.log('DB연결성공')
     db = client.db('forum')
-    app.listen(process.env.PORT, () => {
+    let condition = [
+        {$match : {operationType : 'insert'}}
+    ]
+
+    changeStream = db.collection('post').watch(condition)
+
+    server.listen(process.env.PORT, () => {
         console.log('http://localhost:8080에서 서버 실행중')
     })
 }).catch((err) => {
@@ -301,9 +313,25 @@ app.post('/comment', (req, res) => {
     }
 })
 
+app.get('/stream/list', (req, res) => {
+    res.writeHead(200, {
+        "Connection": "keep-alive",
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+      });
+    
+    res.write('event: msg\n');
+    res.write('data: 바보\n\n');
+
+    changeStream.on('change', (result) => {
+        res.write('event: msg\n');
+        res.write(`data: ${JSON.stringify(result.fullDocument)}\n\n`);
+        })
+})
 
 app.use('/shop', require('./routes/shop.js'))
 app.use('/board/sub', require('./routes/board.js'))
+app.use('/', require('./routes/chat.js'))
 
 function checkUser(req, res, next) {
     if (!req.user) {
@@ -325,3 +353,18 @@ function checkBlank(req, res, next) {
 
     next()
 }
+
+io.on('connection', (socket) => {
+    console.log('누가 연결함')
+
+    socket.on('ask-join', (data) => {
+        console.log(socket.request.session)
+
+        console.log(data)
+        socket.join(data)
+    })
+
+    socket.on('message', (data) => {
+        io.to(data.room).emit('broadcast', data.msg)
+    })  
+})

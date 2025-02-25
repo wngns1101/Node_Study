@@ -9,6 +9,7 @@
 </head>
 
 <body class="grey-bg">
+    <%= console.log(data) %>
     <%- include('nav.ejs') %>
         <div class="detail-bg">
             <h4>
@@ -19,6 +20,12 @@
             </p>
             <img src="<%= data.img %>">
             <hr style="margin-top: 60px">
+
+            <form method="POST" action="/chat">
+                <input type="submit" value="채팅하기"/>
+                <input name = "writerId" value="<%= data.user %>" style="display: none;">
+            </form>
+
             <div>
                 <p><strong>작성자</strong> 댓글내용</p>
             </div>

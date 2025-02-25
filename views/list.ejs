@@ -32,7 +32,7 @@
                         <% if (posts[i].user && user && posts[i].user.toString()===user.toString()) { %>
                             <a href="/modify/<%=posts[i]._id%>">✏️</a>
                             <span class="delete">🗑️</span>
-                        <% } %>
+                            <% } %>
                     </h4>
                     <p>
                         <%=posts[i].content%>
@@ -70,6 +70,15 @@
             });
         </script>
 
+        <script>
+            let eventSource = new EventSource('/stream/list')
+            eventSource.addEventListener('msg', function (e) {
+                let receiveData = JSON.parse(e.data)
+                document.querySelector('.white-bg').insertAdjacentHTML(
+                    'afterbegin', `<div class="list-box"><h4>${receiveData.data.title}</h4></div>`
+                )
+            })
+        </script>
 </body>
 
 </html>
